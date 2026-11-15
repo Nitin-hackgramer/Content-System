@@ -24,7 +24,7 @@ const editorial = localFont({
 });
 const mono = Geist_Mono({ variable: "--font-geist-mono", subsets: ["latin"] });
 
-export const metadata: Metadata = { title: "Creator Studio", description: "A calm workspace for finding and shaping content ideas." };
+export const metadata: Metadata = { title: "Creator Studio", description: "A calm workspace for finding and shaping content ideas.", manifest: "/manifest.webmanifest", appleWebApp: { capable: true, title: "Creator Studio", statusBarStyle: "default" } };
 export const viewport: Viewport = { width: "device-width", initialScale: 1, viewportFit: "cover", themeColor: "#F5F2EC" };
 
 // Data is live per request; nothing here should be prerendered.
