@@ -7,6 +7,9 @@ export type Brief = {
   verified_facts?: string[]; claims_to_verify?: string[]; cta?: string; warnings?: string[]; error?: string;
   audit?: { status?: string; statements?: number; removed?: { where: string; text: string; reason: string }[] }; rejected?: string;
 };
+/** FROZEN v1: the saved-idea contract written by the pipeline (agent/discovery/saved.py record()) and read by this app and
+ *  the Asset system. Changing a key = bump both versions together; the pipeline's test_service fails until they match. */
+export const IDEA_SCHEMA_VERSION = 1;
 export type TrendClass = "new" | "rising" | "popular" | "insufficient_data";
 export type Idea = {
   id: string; rank: number; run_id: string; saved_at: string; title: string; summary: string; url?: string;

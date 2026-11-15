@@ -33,3 +33,12 @@ export function greeting(d = new Date()) {
   const h = d.getHours();
   return h < 12 ? "Good morning" : h < 18 ? "Good afternoon" : "Good evening";
 }
+
+/** Settings' "Ideas database" badge: the actual cause, not just "unreachable". err is data.ts's message ("Supabase 404"). */
+export function dbLabel(connected: boolean, source: "supabase" | "local" | null, err: string | null): { v: string; tone: "ok" | "warn" | "error" } {
+  if (!connected) return { v: "Not set", tone: "warn" };
+  if (source === "supabase") return { v: "Connected", tone: "ok" };
+  if (err?.includes("404")) return { v: "Tables missing: run docs/supabase.sql", tone: "error" };
+  if (/40[13]/.test(err ?? "")) return { v: "Key rejected", tone: "error" };
+  return { v: "Unreachable", tone: "error" };
+}

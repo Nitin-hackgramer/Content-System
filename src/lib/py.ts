@@ -19,7 +19,7 @@ async function call(path: string, body?: unknown): Promise<{ code: number; data:
   if (!c) return { code: 0, data: null };
   try {
     const res = await fetch(`${c.url}${path}`, {
-      method: body === undefined ? "GET" : "POST", cache: "no-store", signal: AbortSignal.timeout(8000),
+      method: body === undefined ? "GET" : "POST", cache: "no-store", signal: AbortSignal.timeout(70000), // a sleeping Render free instance takes ~1 min to wake
       headers: { "X-Trigger-Secret": c.key, "Content-Type": "application/json" }, body: body === undefined ? undefined : JSON.stringify(body),
     });
     return { code: res.status, data: await res.json().catch(() => null) };

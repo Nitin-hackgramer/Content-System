@@ -20,7 +20,7 @@ export default async function Sources() {
   return (
     <>
       <PageHeader title="Sources" back="/more" lead={run ? `As of the last run, ${timeAgo(run.generated_at)}.` : "Where discovery reads from."} />
-      {!groups.length ? <Empty title="No source data" body={d.canRun ? "No run logs found yet. Run discovery first." : "Source status is read from the pipeline's run logs. Set DISCOVERY_DIR in the app's .env.local."} /> : (
+      {!groups.length ? <Empty title="No source data" body="No run logs found yet. Run discovery first." /> : (
         <>
           <div className="mb-4 grid grid-cols-3 gap-2 rounded-card-lg bg-surface p-4">
             <Stat label="Sources" value={all.length} /><Stat label="Healthy" value={all.length - bad} tone="ok" /><Stat label="Failing" value={bad} />

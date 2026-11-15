@@ -15,7 +15,7 @@ export const loadCore = cache(async () => {
   const latestIdeas = latestRunId ? ideas.filter((x) => x.run_id === latestRunId).sort((a, b) => a.rank - b.rank) : [];
   return {
     ideas, states, runs, latestIdeas, latestRunId, latestRun: runs[0] ?? null,
-    error: i.ok ? null : i.error, source: i.ok ? i.data.source : null, runsAvailable: r.ok, canRun: pipelineConfigured(), connected: hasBackend(),
+    error: i.ok ? null : i.error, source: i.ok ? i.data.source : null, dbError: i.ok ? i.data.dbError : i.error, runsAvailable: r.ok, canRun: pipelineConfigured(), connected: hasBackend(),
   };
 });
 

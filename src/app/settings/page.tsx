@@ -1,5 +1,6 @@
 import { Database, FolderOpen, Notebook, SlidersHorizontal, Broadcast, BellRinging } from "@phosphor-icons/react/dist/ssr";
 import { loadCore } from "@/lib/load";
+import { dbLabel } from "@/lib/format";
 import { Badge, PageHeader, Section, type Tone } from "@/components/ui";
 import { Accordion } from "@/components/accordion";
 
@@ -16,12 +17,13 @@ const List = ({ children }: { children: React.ReactNode }) => <ul className="div
 
 export default async function Settings() {
   const d = await loadCore();
+  const db = dbLabel(d.connected, d.source, d.dbError);
   return (
     <>
       <PageHeader title="Settings" back="/more" lead="What is connected, and where things are set." />
       <Section title="Connections">
         <List>
-          <Row Icon={Database} k="Ideas database" v={!d.connected ? "Not set" : d.source === "supabase" ? "Connected" : "Unreachable"} tone={!d.connected ? "warn" : d.source === "supabase" ? "ok" : "error"} />
+          <Row Icon={Database} k="Ideas database" v={db.v} tone={db.tone} />
           <Row Icon={Notebook} k="Ideas are read from" v={d.source === "supabase" ? "Supabase" : d.source === "local" ? "Local copy" : "Nothing"} tone={d.source === "supabase" ? "ok" : d.source === "local" ? "warn" : "error"} />
           <Row Icon={FolderOpen} k="Pipeline service" v={d.canRun ? "Linked" : "Not linked"} tone={d.canRun ? "ok" : "neutral"} />
           <Row Icon={Broadcast} k="Run logs" v={d.runsAvailable ? `${d.runs.length} found` : "Unavailable"} tone={d.runsAvailable ? "ok" : "neutral"} />

@@ -26,9 +26,9 @@ async function localIdeas() {
 }
 
 export const getIdeas = () => wrap(async () => {
-  let v: { ideas: Idea[]; at: string } | null, source: "supabase" | "local" = "supabase";
-  try { v = await kv<{ ideas: Idea[]; at: string }>(IDEAS_KEY); } catch (e) { v = await localIdeas(); source = "local"; if (!v) throw e; }
-  return { ideas: v?.ideas ?? [], at: v?.at ?? null, source };
+  let v: { ideas: Idea[]; at: string } | null, source: "supabase" | "local" = "supabase", dbError: string | null = null;
+  try { v = await kv<{ ideas: Idea[]; at: string }>(IDEAS_KEY); } catch (e) { v = await localIdeas(); source = "local"; dbError = e instanceof Error ? e.message : "error"; if (!v) throw e; }
+  return { ideas: v?.ideas ?? [], at: v?.at ?? null, source, dbError };
 });
 
 // Idea state lives in Supabase (discovery_kv). If that is unreachable it falls back to a local file so the
@@ -75,25 +75,39 @@ export async function syncLocalState() {
   return { synced: ids.length };
 }
 
+// Trend observations. Falls back to the pipeline's local copy (same rows) when Supabase cannot answer.
 export const getObs = (days = 30) => wrap(async () => {
   const since = new Date(Date.now() - days * 864e5).toISOString().slice(0, 10);
-  return rest<TopicObs[]>("GET", "discovery_topic_obs", { select: "*", obs_date: `gte.${since}`, order: "obs_date.asc", limit: "5000" });
+  try {
+    return await rest<TopicObs[]>("GET", "discovery_topic_obs", { select: "*", obs_date: `gte.${since}`, order: "obs_date.asc", limit: "5000" });
+  } catch (e) {
+    const dir = discoveryDir();
+    if (!dir) throw e;
+    const { rows } = JSON.parse(await readFile(path.join(dir, "data", "discovery", "topic_obs.json"), "utf8")) as { rows: TopicObs[] };
+    return rows.filter((r) => r.obs_date >= since).sort((a, b) => a.obs_date.localeCompare(b.obs_date));
+  }
 });
 
-// ---- run logs: read-only look at the pipeline's data/discovery/*.json (local only) ----
+// ---- run logs: the pipeline saves one discovery_kv row per run (key discovery_run:<time>); local JSON files are the fallback ----
 export const discoveryDir = () => (process.env.DISCOVERY_DIR ? path.resolve(/*turbopackIgnore: true*/ process.cwd(), process.env.DISCOVERY_DIR) : null);
 
-export async function getRuns(): Promise<Result<RunLog[]>> {
+async function localRuns(): Promise<RunLog[]> {
   const dir = discoveryDir();
-  if (!dir) return { ok: false, error: "DISCOVERY_DIR not set" };
-  return wrap(async () => {
-    const d = path.join(dir, "data", "discovery");
-    const files = (await readdir(d)).filter((f) => /^\d{4}-\d\d-\d\d_\d+\.json$/.test(f)).sort().reverse().slice(0, 30);
-    const logs = await Promise.all(files.map(async (f) => {
-      try { return JSON.parse(await readFile(path.join(d, f), "utf8")) as RunLog; } catch { return null; }
-    }));
-    return logs.filter((l): l is RunLog => !!l);
-  });
+  if (!dir) throw new Error("Run logs are unavailable: Supabase did not answer and DISCOVERY_DIR is not set");
+  const d = path.join(dir, "data", "discovery");
+  const files = (await readdir(d)).filter((f) => /^\d{4}-\d\d-\d\d_\d+\.json$/.test(f)).sort().reverse().slice(0, 30);
+  const logs = await Promise.all(files.map(async (f) => {
+    try { return JSON.parse(await readFile(path.join(d, f), "utf8")) as RunLog; } catch { return null; }
+  }));
+  return logs.filter((l): l is RunLog => !!l);
 }
+
+export const getRuns = (): Promise<Result<RunLog[]>> => wrap(async () => {
+  try {
+    const rows = await rest<{ value: RunLog }[]>("GET", "discovery_kv", { select: "value", key: "like.discovery_run:*", order: "key.desc", limit: "30" });
+    if (rows.length) return rows.map((r) => r.value);
+  } catch { /* fall through to local logs */ }
+  return localRuns();
+});
 
 export const hasBackend = configured;
