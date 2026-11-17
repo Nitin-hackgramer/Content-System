@@ -1,11 +1,12 @@
 import Link from "next/link";
-import { TrendUp, ClockCounterClockwise, Broadcast, GearSix, ImageSquare, FilmSlate, PaperPlaneTilt, CaretRight, Lock } from "@phosphor-icons/react/dist/ssr";
+import { TrendUp, ClockCounterClockwise, Broadcast, GearSix, ImagesSquare, FilmSlate, PaperPlaneTilt, CaretRight, Lock } from "@phosphor-icons/react/dist/ssr";
 import { loadCore } from "@/lib/load";
 import { parseSources } from "@/lib/sources";
+import { listJobs } from "@/lib/assets";
+import { groupOf } from "@/lib/asset-status";
 import { Badge, PageHeader, Section } from "@/components/ui";
 
 const SOON = [
-  { label: "Asset Studio", body: "Images and visuals for an idea", Icon: ImageSquare },
   { label: "Production Studio", body: "Turn a brief into a finished video", Icon: FilmSlate },
   { label: "Publishing Studio", body: "Schedule and post", Icon: PaperPlaneTilt },
 ];
@@ -15,6 +16,8 @@ export default async function More() {
   const rows = d.latestRun ? parseSources(d.latestRun.sources) : [];
   const bad = rows.filter((r) => !r.ok).length;
   const topics = new Set(d.ideas.map((i) => i.trend?.topic_key).filter(Boolean)).size;
+  const jobs = d.source === "supabase" ? await listJobs().catch(() => null) : null;
+  const active = jobs?.filter((j) => groupOf(j.status) !== "history").length ?? 0;
   const tiles = [
     { href: "/trends", label: "Trends", body: "What is new, rising or popular", stat: `${topics} topics`, Icon: TrendUp, tint: "bg-accent-deep text-white" },
     { href: "/history", label: "History", body: "Runs, outcomes and errors", stat: d.runs.length ? `${d.runs.length} runs` : "No logs", Icon: ClockCounterClockwise, tint: "card-obsidian text-bg" },
@@ -24,6 +27,14 @@ export default async function More() {
   return (
     <>
       <PageHeader title="More" lead="Behind the scenes, and what is next." />
+      <Link href="/assets" data-origin className="press-card group mb-3 flex items-center gap-4 rounded-card-lg bg-[image:var(--terracotta-tint)] p-4 ring-1 ring-inset ring-[var(--terracotta-line)]">
+        <span className="grid size-12 shrink-0 place-items-center rounded-xl bg-accent-deep text-white"><ImagesSquare size={26} weight="fill" aria-hidden /></span>
+        <div className="min-w-0 flex-1">
+          <p className="t-heading">Asset Studio</p>
+          <p className="t-meta mt-0.5">Choose visuals for an idea and send them to your laptop</p>
+        </div>
+        <p className="flex items-center gap-1 font-mono text-[13px] text-ink">{jobs ? (active ? `${active} active` : `${jobs.length} projects`) : ""}<CaretRight size={16} className="text-muted transition-transform duration-200 group-active:translate-x-1" aria-hidden /></p>
+      </Link>
       <ul className="grid grid-cols-2 gap-3">
         {tiles.map(({ href, label, body, stat, Icon, tint }) => (
           <li key={href}>

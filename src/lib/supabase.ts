@@ -9,7 +9,15 @@ const base = () => {
 
 export const configured = () => base() !== null;
 
-export async function rest<T>(method: "GET" | "POST", table: string, params: Record<string, string> = {}, body?: unknown, prefer?: string): Promise<T> {
+/** `rule` is set only for messages our own database guards raise on purpose (SQLSTATE P0001); every other error stays opaque. */
+export class DbError extends Error {
+  status: number; rule: string | null; code: string | null;
+  constructor(status: number, rule: string | null = null, code: string | null = null) {
+    super(rule ?? `Supabase ${status}`); this.status = status; this.rule = rule; this.code = code;
+  }
+}
+
+export async function rest<T>(method: "GET" | "POST" | "DELETE", table: string, params: Record<string, string> = {}, body?: unknown, prefer?: string): Promise<T> {
   const b = base();
   if (!b) throw new Error("Supabase is not configured");
   const res = await fetch(`${b.url}/${table}?${new URLSearchParams(params)}`, {
@@ -17,6 +25,10 @@ export async function rest<T>(method: "GET" | "POST", table: string, params: Rec
     headers: { ...b.headers, "Content-Type": "application/json", ...(prefer ? { Prefer: prefer } : {}) },
     body: body === undefined ? undefined : JSON.stringify(body),
   });
-  if (!res.ok) throw new Error(`Supabase ${res.status}`); // never echo the body: it can name keys or tables
-  return (res.status === 204 || method === "POST" ? null : await res.json()) as T;
+  if (!res.ok) { // never echo the body: it can name keys or tables
+    const e = (await res.json().catch(() => null)) as { code?: string; message?: string } | null;
+    throw new DbError(res.status, e?.code === "P0001" ? e.message ?? null : null, e?.code ?? null);
+  }
+  const text = await res.text();
+  return (text ? JSON.parse(text) : null) as T;
 }

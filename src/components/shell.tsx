@@ -3,7 +3,7 @@ import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { useEffect, useState } from "react";
 import { MotionConfig, motion } from "motion/react";
-import { House, Compass, BookmarksSimple, SquaresFour, SidebarSimple, TrendUp, ClockCounterClockwise, Broadcast, GearSix } from "@phosphor-icons/react";
+import { House, Compass, BookmarksSimple, SquaresFour, SidebarSimple, TrendUp, ClockCounterClockwise, Broadcast, GearSix, ImagesSquare } from "@phosphor-icons/react";
 import clsx from "clsx";
 import { Connectivity, type Mode } from "./notice";
 import { Toaster } from "./toaster";
@@ -17,6 +17,7 @@ const MAIN = [
   { href: "/more", label: "More", Icon: SquaresFour },
 ];
 const MORE = [
+  { href: "/assets", label: "Asset Studio", Icon: ImagesSquare },
   { href: "/trends", label: "Trends", Icon: TrendUp },
   { href: "/history", label: "History", Icon: ClockCounterClockwise },
   { href: "/sources", label: "Sources", Icon: Broadcast },

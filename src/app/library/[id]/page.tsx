@@ -10,6 +10,7 @@ import { Track } from "@/components/personal";
 import { IdeaActions } from "@/components/idea-actions";
 import { BriefButton } from "@/components/brief-button";
 import { DetailShell } from "@/components/morph";
+import { AssetEntry } from "@/components/asset-entry";
 
 const LEVEL: Record<string, string> = { engagement: "Measured engagement", single_source: "Single source", multi_source: "Several sources" };
 
@@ -60,6 +61,8 @@ export default async function IdeaDetail({ params }: { params: Promise<{ id: str
       </div>
 
       <div className="mt-4 hidden lg:block lg:max-w-md"><IdeaActions id={id} status={status} labels /></div>
+
+      <AssetEntry ideaId={idea.id} />
 
       <div className="mt-6 grid gap-4 lg:grid-cols-[1.45fr_1fr]">
         <div className="space-y-4">
