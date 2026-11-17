@@ -1,21 +1,23 @@
 // Run with --conditions=react-server (see package.json "test"). Real collector code against a stand-in PostgREST.
+import type { IdeaSnapshot } from "./asset-status.ts";
 import { test, beforeEach } from "node:test";
 import assert from "node:assert/strict";
-import { clean, parseCandidate, runCollector, validate, MAX_CANDIDATES, type AssetProvider } from "./collector.ts";
+import { claimCollection, clean, finishCollection, parseCandidate, validate, MAX_CANDIDATES, type AssetProvider } from "./collector.ts";
 
-type Call = { fn: string; body: Record<string, unknown> };
+type Call = { fn: string; body: Record<string, unknown>; params: URLSearchParams };
 let calls: Call[] = [], answers: { status: number; body?: unknown }[] = [];
 beforeEach(() => {
   calls = []; answers = [];
   process.env.SUPABASE_URL = "https://db.test"; process.env.SUPABASE_SECRET_KEY = "secret";
   globalThis.fetch = (async (input: string | URL, init?: RequestInit) => {
-    calls.push({ fn: new URL(String(input)).pathname.replace("/rest/v1/rpc/", ""), body: JSON.parse(String(init?.body ?? "{}")) });
+    const u = new URL(String(input));
+    calls.push({ fn: u.pathname.replace("/rest/v1/", "").replace("rpc/", ""), body: JSON.parse(String(init?.body ?? "{}")), params: u.searchParams });
     const a = answers.shift() ?? { status: 200, body: [] };
     return new Response(a.body === undefined ? null : JSON.stringify(a.body), { status: a.status });
   }) as typeof fetch;
 });
 const reply = (...a: { status: number; body?: unknown }[]) => answers.push(...a);
-const JOB = { id: "8b0e6d1a-1111-4c1c-9a7e-1d2c3b4a5f60", idea_id: "4365b119889f", title: "Robots cook", idea: { title: "Robots cook" }, collect_token: "tok-1", collect_attempts: 1 };
+const JOB = { id: "8b0e6d1a-1111-4c1c-9a7e-1d2c3b4a5f60", idea_id: "4365b119889f", title: "Robots cook", idea: { title: "Robots cook" } as unknown as IdeaSnapshot, collect_token: "tok-1", collect_attempts: 1 };
 const claimed = (j = JOB) => ({ status: 200, body: [j] });
 const none = { status: 200, body: [] };
 const ok = { status: 200, body: {} };
@@ -45,92 +47,110 @@ test("stored errors carry no URLs and stay short", () => {
   assert.ok(clean("y".repeat(900)).length <= 200);
 });
 
-// ---- the run ----
-test("no provider configured: nothing is claimed and it says so", async () => {
-  const s = await runCollector([], quiet);
-  assert.deepEqual(s, { configured: false, claimed: 0, collected: 0, failed: 0, stopped: 0 });
+// ---- tapping Collect: claiming exactly one job ----
+const state = (o: Partial<{ status: string; collect_attempts: number; collect_max_attempts: number; collect_token: string | null; collect_lease_expires_at: string | null }>) =>
+  ({ status: 200, body: [{ status: "collecting", collect_attempts: 1, collect_max_attempts: 3, collect_token: null, collect_lease_expires_at: null, ...o }] });
+const future = () => new Date(Date.now() + 60_000).toISOString();
+
+test("no provider: nothing is claimed and the database is not touched", async () => {
+  assert.deepEqual(await claimCollection(JOB.id, []), { state: "no_provider" });
   assert.deepEqual(calls, []);
 });
-test("no waiting jobs: one claim, no work", async () => {
-  reply(none);
-  const s = await runCollector([found(good(1))], quiet);
-  assert.deepEqual([s.claimed, names()], [0, ["claim_collect_job"]]);
+test("the claim names exactly the requested job", async () => {
+  reply(claimed());
+  const r = await claimCollection(JOB.id, [found(good(1))]);
+  assert.equal(r.state, "started");
+  assert.deepEqual([calls.length, calls[0].fn, calls[0].body.p_job], [1, "claim_collect_job", JOB.id]);
 });
-test("success: valid candidates are submitted in one call with the claim token, and the job is collected", async () => {
-  reply(claimed(), ok, none);
-  const s = await runCollector([found(good(1), good(2), { bad: true })], quiet);
-  assert.deepEqual([s.claimed, s.collected, s.failed], [1, 1, 0]);
-  assert.deepEqual(names(), ["claim_collect_job", "submit_collection", "claim_collect_job"]);
-  const sub = calls[1].body as { p_job: string; p_token: string; p_items: unknown[] };
+test("a duplicate tap while a collection runs reports running and changes nothing", async () => {
+  reply(none, state({ collect_token: "tok-live", collect_lease_expires_at: future() }));
+  assert.deepEqual(await claimCollection(JOB.id, [found(good(1))]), { state: "running" });
+  assert.deepEqual(names(), ["claim_collect_job", "asset_jobs"]); // no retry reset, no second claim
+});
+test("a tap during failure backoff says to wait", async () => {
+  reply(none, state({ collect_lease_expires_at: future() }));
+  assert.deepEqual(await claimCollection(JOB.id, [found(good(1))]), { state: "waiting" });
+});
+test("a job that already moved past collecting is left alone", async () => {
+  reply(none, state({ status: "pending_download" }));
+  assert.deepEqual(await claimCollection(JOB.id, [found(good(1))]), { state: "moved_on" });
+  assert.deepEqual(names(), ["claim_collect_job", "asset_jobs"]);
+});
+test("an unknown job is reported, not created", async () => {
+  reply(none, { status: 200, body: [] });
+  assert.deepEqual(await claimCollection(JOB.id, [found(good(1))]), { state: "not_found" });
+});
+test("out of attempts: the user's next tap is the explicit retry (reset, then one claim)", async () => {
+  reply(none, state({ collect_attempts: 3 }), ok, claimed());
+  assert.equal((await claimCollection(JOB.id, [found(good(1))])).state, "started");
+  assert.deepEqual(names(), ["claim_collect_job", "asset_jobs", "retry_collect_job", "claim_collect_job"]);
+});
+test("out of attempts but a collection is still live: the reset is refused and nothing is killed", async () => {
+  reply(none, state({ collect_attempts: 3 }), { status: 400, body: { code: "P0001", message: "a collection is already running for asset job x" } });
+  assert.deepEqual(await claimCollection(JOB.id, [found(good(1))]), { state: "running" });
+  assert.deepEqual(names(), ["claim_collect_job", "asset_jobs", "retry_collect_job"]);
+});
+
+// ---- running a claimed job ----
+const run = (providers: AssetProvider[], o: Parameters<typeof finishCollection>[2] = quiet) => finishCollection(JOB, providers, o);
+
+test("success: valid candidates are submitted in one call with the claim token", async () => {
+  reply(ok);
+  const r = await run([found(good(1), good(2), { bad: true })]);
+  assert.deepEqual(r, { kind: "ok", candidates: 2, rejected: 1 });
+  assert.deepEqual(names(), ["submit_collection"]);
+  const sub = calls[0].body as { p_job: string; p_token: string; p_items: unknown[] };
   assert.deepEqual([sub.p_job, sub.p_token, sub.p_items.length], [JOB.id, "tok-1", 2]);
 });
 test("providers get the saved idea and a job id, never the claim token", async () => {
-  reply(claimed(), ok, none);
+  reply(ok);
   let seen: unknown;
-  await runCollector([provider("p", async (i) => { seen = i; return { ok: true, candidates: [good(1)] }; })], quiet);
+  await run([provider("p", async (i) => { seen = i; return { ok: true, candidates: [good(1)] }; })]);
   assert.deepEqual(seen, { jobId: JOB.id, ideaId: JOB.idea_id, title: JOB.title, idea: JOB.idea });
 });
-test("empty provider result is released for retry, never sent to review", async () => {
-  reply(claimed(), ok, none);
-  const s = await runCollector([found()], quiet);
-  assert.deepEqual([s.collected, s.failed], [0, 1]);
-  assert.ok(!names().includes("submit_collection"));
-  assert.equal(calls[1].fn, "fail_collect_job");
-  assert.match(String(calls[1].body.p_error), /no candidates/);
+test("empty provider result is recorded for retry, never sent to review", async () => {
+  reply(ok);
+  assert.equal((await run([found()])).kind, "failed");
+  assert.deepEqual(names(), ["fail_collect_job"]);
+  assert.match(String(calls[0].body.p_error), /no candidates/);
 });
-test("a batch with only invalid candidates is released for retry", async () => {
-  reply(claimed(), ok, none);
-  const s = await runCollector([found({ asset_type: "image" }, { source_url: "x" })], quiet);
-  assert.deepEqual([s.collected, s.failed], [0, 1]);
-  assert.match(String(calls[1].body.p_error), /invalid/);
+test("a batch with only invalid candidates is recorded for retry", async () => {
+  reply(ok);
+  assert.equal((await run([found({ asset_type: "image" }, { source_url: "x" })])).kind, "failed");
+  assert.match(String(calls[0].body.p_error), /invalid/);
   assert.ok(!names().includes("submit_collection"));
 });
-test("provider failure (returned or thrown) is released with a URL-free reason", async () => {
-  reply(claimed(), ok, none);
-  const s = await runCollector([provider("a", async () => ({ ok: false, error: "quota at https://api.example/q?key=SECRET" })),
-    provider("b", async () => { throw new Error("boom"); })], quiet);
-  assert.equal(s.failed, 1);
-  const err = String(calls[1].body.p_error);
+test("provider failure (returned or thrown) is recorded with a URL-free reason", async () => {
+  reply(ok);
+  const r = await run([provider("a", async () => ({ ok: false, error: "quota at https://api.example/q?key=SECRET" })),
+    provider("b", async () => { throw new Error("boom"); })]);
+  assert.equal(r.kind, "failed");
+  const err = String(calls[0].body.p_error);
   assert.ok(err.includes("a:") && err.includes("b: boom") && !err.includes("SECRET"));
 });
 test("partial provider failure: the working provider's candidates still go through", async () => {
-  reply(claimed(), ok, none);
-  const s = await runCollector([provider("bad", async () => { throw new Error("down"); }), found(good(1))], quiet);
-  assert.deepEqual([s.collected, s.failed], [1, 0]);
-  assert.equal(calls[1].fn, "submit_collection");
+  reply(ok);
+  assert.equal((await run([provider("bad", async () => { throw new Error("down"); }), found(good(1))])).kind, "ok");
+  assert.equal(calls[0].fn, "submit_collection");
 });
-test("database insertion failure: the job is released, not marked reviewed", async () => {
-  reply(claimed(), { status: 500 }, ok, none);
-  const s = await runCollector([found(good(1))], quiet);
-  assert.deepEqual([s.collected, s.failed], [0, 1]);
-  assert.deepEqual(names().slice(0, 3), ["claim_collect_job", "submit_collection", "fail_collect_job"]);
+test("database insertion failure: the job is recorded as failed, not marked reviewed", async () => {
+  reply({ status: 500 }, ok);
+  assert.equal((await run([found(good(1))])).kind, "failed");
+  assert.deepEqual(names(), ["submit_collection", "fail_collect_job"]);
 });
-test("user finalized (or the lease ran out) mid-collection: the collector stops and writes nothing more", async () => {
-  reply(claimed(), held, none);
-  const s = await runCollector([found(good(1))], quiet);
-  assert.deepEqual([s.collected, s.failed, s.stopped], [0, 0, 1]);
-  assert.ok(!names().includes("fail_collect_job"));
+test("user finalized (or the lease ran out) mid-collection: it stops and writes nothing more", async () => {
+  reply(held);
+  assert.deepEqual(await run([found(good(1))]), { kind: "stopped" });
+  assert.deepEqual(names(), ["submit_collection"]);
 });
-test("a failed release is survivable: the lease expiry recovers the job", async () => {
-  reply(claimed(), { status: 500 }, { status: 500 }, none);
-  const s = await runCollector([found(good(1))], quiet);
-  assert.equal(s.failed, 1);
-});
-test("work per run is bounded by maxJobs", async () => {
-  reply(claimed(), ok, claimed({ ...JOB, id: "2" }), ok, claimed({ ...JOB, id: "3" }), ok);
-  const s = await runCollector([found(good(1))], { ...quiet, maxJobs: 2 });
-  assert.equal(s.claimed, 2);
-  assert.equal(names().filter((n) => n === "claim_collect_job").length, 2);
-});
-test("an exhausted time budget claims nothing", async () => {
-  const s = await runCollector([found(good(1))], { ...quiet, budgetMs: 0 });
-  assert.equal(s.claimed, 0);
-  assert.deepEqual(calls, []);
+test("a failed release is survivable: the lease expiry frees the job", async () => {
+  reply({ status: 500 }, { status: 500 });
+  assert.equal((await run([found(good(1))])).kind, "failed");
 });
 test("log lines never contain claim tokens or candidate URLs", async () => {
-  reply(claimed(), ok, none);
+  reply(ok);
   const lines: string[] = [];
-  await runCollector([found(good(1))], { log: (l) => lines.push(JSON.stringify(l)) });
+  await run([found(good(1))], { log: (l: Record<string, unknown>) => lines.push(JSON.stringify(l)) });
   const all = lines.join("");
   assert.ok(all.includes(JOB.id) && !all.includes("tok-1") && !all.includes("src.example") && !all.includes("secret"));
 });

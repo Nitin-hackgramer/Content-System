@@ -6,7 +6,11 @@ import { STATUS, canReopen, canRetry, canSelect, isLive } from "@/lib/asset-stat
 import { Badge, ErrorNote, PageHeader, Section } from "@/components/ui";
 import { CollectorNotice, DownloadPanel, StepTrack, Times } from "@/components/asset-job";
 import { AssetCard, AssetReview } from "@/components/asset-review";
-import { JobActions, Refresh } from "@/components/asset-controls";
+import { CollectButton, JobActions, Refresh } from "@/components/asset-controls";
+import { providers } from "@/lib/providers";
+
+// Server Actions on this page run collection in after(); give them the time (seconds).
+export const maxDuration = 60;
 
 export const dynamic = "force-dynamic";
 
@@ -57,7 +61,7 @@ export default async function AssetProject({ params }: { params: Promise<{ id: s
               {job.status === "collecting" && <p className="t-meta mb-3">Still collecting. More assets may appear.</p>}
               <AssetReview jobId={job.id} status={job.status} candidates={candidates} keptIds={[...sel.keys()]} />
             </>
-          ) : <CollectorNotice error={job.error_message} />}
+          ) : <CollectorNotice error={job.error_message} connected={providers.length > 0}>{providers.length > 0 && job.status === "collecting" && <CollectButton jobId={job.id} label={job.error_message ? "Try again" : "Collect assets"} />}</CollectorNotice>}
         </Section>
       ) : (
         <>

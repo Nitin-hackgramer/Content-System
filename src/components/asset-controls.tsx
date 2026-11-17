@@ -6,7 +6,8 @@ import clsx from "clsx";
 import { btn } from "./ui";
 import { useAssetAction } from "./asset-gate";
 import { toast } from "@/lib/toast";
-import { startAssetJob, reopenAssetJob, retryAssetJob } from "@/app/assets/actions";
+import { collectionNote } from "@/lib/asset-status";
+import { startAssetJob, collectAssets, reopenAssetJob, retryAssetJob } from "@/app/assets/actions";
 
 /** "Collect assets" on an idea: makes (or reuses) the idea's asset project and opens it. */
 export function StartAssets({ ideaId }: { ideaId: string }) {
@@ -14,9 +15,22 @@ export function StartAssets({ ideaId }: { ideaId: string }) {
   const { run, pending, sheet } = useAssetAction();
   return (
     <>
-      <button type="button" disabled={pending} onClick={() => run(() => startAssetJob(ideaId), (r) => router.push(`/assets/${r.id}`))}
+      <button type="button" disabled={pending} onClick={() => run(() => startAssetJob(ideaId), (r) => { const n = collectionNote(r.collection); if (n) toast(n); router.push(`/assets/${r.id}`); })}
         className={clsx(btn.base, btn.primary, "w-full")}>
         <ImagesSquare size={20} weight="fill" aria-hidden />{pending ? "Creating project…" : "Collect assets"}
+      </button>
+      {sheet}
+    </>
+  );
+}
+
+/** Collect (again) for one project. One tap, one collection; the server says whether it started, is running or has no provider. */
+export function CollectButton({ jobId, label }: { jobId: string; label: string }) {
+  const { run, pending, sheet } = useAssetAction();
+  return (
+    <>
+      <button type="button" disabled={pending} onClick={() => run(() => collectAssets(jobId), (r) => toast(collectionNote(r.collection) ?? "Done"))} className={clsx(btn.base, btn.quiet, "mt-4")}>
+        <ArrowClockwise size={18} weight="bold" aria-hidden />{pending ? "Starting…" : label}
       </button>
       {sheet}
     </>

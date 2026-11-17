@@ -57,6 +57,19 @@ export const groupOf = (s: AssetStatus): Group =>
 export const progress = (j: Pick<AssetJob, "download_progress">) => Math.max(0, Math.min(100, Number(j.download_progress) || 0));
 
 /** Database rule messages (raised by the migration's guards) in words for people. Anything unknown stays generic. */
+/** What tapping Collect did, in words. null = nothing to say (work simply started). */
+export function collectionNote(state: string | undefined): string | null {
+  switch (state) {
+    case "started": return "Collecting started. You can leave this page.";
+    case "no_provider": return "Asset collection isn't connected yet. Your project is saved.";
+    case "running": return "A collection is already running for this project.";
+    case "waiting": return "The last attempt failed. Try again in a few minutes.";
+    case "moved_on": return "This project has already moved past collecting.";
+    case "unavailable": return "Collection couldn't start. Your project is saved; try again.";
+    default: return null;
+  }
+}
+
 export function friendly(rule: string | null | undefined): string {
   const r = rule ?? "";
   if (/are locked/.test(r)) return "This selection is locked. Reopen the project to change it.";

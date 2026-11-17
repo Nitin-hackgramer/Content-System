@@ -12,6 +12,9 @@ import { BriefButton } from "@/components/brief-button";
 import { DetailShell } from "@/components/morph";
 import { AssetEntry } from "@/components/asset-entry";
 
+// Server Actions on this page run collection in after(); give them the time (seconds).
+export const maxDuration = 60;
+
 const LEVEL: Record<string, string> = { engagement: "Measured engagement", single_source: "Single source", multi_source: "Several sources" };
 
 function Block({ icon, title, children }: { icon: React.ReactNode; title: string; children: React.ReactNode }) {
