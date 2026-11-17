@@ -57,7 +57,7 @@ export default async function AssetProject({ params }: { params: Promise<{ id: s
               {job.status === "collecting" && <p className="t-meta mb-3">Still collecting. More assets may appear.</p>}
               <AssetReview jobId={job.id} status={job.status} candidates={candidates} keptIds={[...sel.keys()]} />
             </>
-          ) : <CollectorNotice />}
+          ) : <CollectorNotice error={job.error_message} />}
         </Section>
       ) : (
         <>

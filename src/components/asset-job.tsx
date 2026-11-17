@@ -93,12 +93,13 @@ function Panel({ tone, icon, title, body }: { tone: "ok" | "error" | "info"; ico
 }
 
 /** Honest placeholder until the collector exists: nothing is invented to look like a result. */
-export function CollectorNotice() {
+export function CollectorNotice({ error }: { error?: string | null }) {
   return (
     <div className="rounded-card-lg border border-dashed border-ink/20 px-6 py-10 text-center">
       <span className="mx-auto grid size-14 place-items-center rounded-full bg-paper text-muted shadow-card"><PlugsConnected size={26} aria-hidden /></span>
       <p className="t-heading mt-4">Asset collection isn&apos;t connected yet</p>
       <p className="t-body mx-auto mt-1 max-w-[40ch] text-muted">When it is, the images and clips found for this idea appear here for you to keep or skip.</p>
+      {error && <p className="mx-auto mt-3 max-w-[40ch] text-[14px] text-error-700">Collection problem: {error}</p>}
     </div>
   );
 }
